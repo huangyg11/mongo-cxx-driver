@@ -96,6 +96,10 @@ namespace mongo {
          */
         BSONObj storeFile( const char* data , size_t length , const std::string& remoteName , const std::string& contentType="");
 
+
+        BSONObj storeFile(const char *data, size_t length, const std::string &remoteName,
+                          BSONObj &metadata, std::string const &contentType = "");
+
         /**
          * removes file referenced by fileName from the db
          * @param fileName filename (in GridFS) of the file to remove
@@ -133,6 +137,9 @@ namespace mongo {
 
         // insert fileobject. All chunks must be in DB.
         BSONObj insertFile(const std::string& name, const OID& id, gridfs_offset length, const std::string& contentType);
+
+        BSONObj insertFile(const std::string& name, const OID& id, gridfs_offset length,
+                           const std::string& contentType, BSONObj &metadata);
 
         // Insert a chunk into DB, this method is intended to be used by
         // GridFileBuilder to incrementally insert chunks

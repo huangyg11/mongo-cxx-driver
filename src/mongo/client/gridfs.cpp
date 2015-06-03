@@ -194,6 +194,69 @@ namespace mongo {
         }
     }
 
+    BSONObj GridFS::storeFile(const char *data, size_t length,
+                               const std::string &remoteName, BSONObj &metadata,
+                               std::string const &contentType) {
+        char const * const end = data + length;
+
+        OID id;
+        id.init();
+        BSONObj idObj = BSON("_id" << id);
+
+        int chunkNumber = 0;
+        while (data < end) {
+            int chunkLen = MIN(_chunkSize, (unsigned)(end-data));
+            GridFSChunk c(idObj, chunkNumber, data, chunkLen);
+            _client.insert( _chunksNS.c_str() , c._data );
+
+            chunkNumber++;
+            data += chunkLen;
+        }
+
+        return insertFile(remoteName, id, length, contentType, metadata);
+    }
+
+    BSONObj GridFS::insertFile(const std::string& name, const OID& id,
+                                gridfs_offset length, const std::string& contentType,
+                                BSONObj &metadata) {
+        // Wait for any pending writebacks to finish
+        BSONObj errObj = _client.getLastErrorDetailed();
+            uassert( 16428,
+                     str::stream() << "Error storing GridFS chunk for file: " << name
+                     << ", error: " << errObj,
+                     DBClientWithCommands::getLastErrorString(errObj) == "" );
+
+        BSONObj res;
+        if ( ! _client.runCommand( _dbName.c_str() , BSON( "filemd5" << id << "root" << _prefix ) , res ) )
+            throw UserException( 9008 , "filemd5 failed" );
+
+        BSONObjBuilder file;
+        file << "_id" << id
+        << "filename" << name
+        << "chunkSize" << _chunkSize
+        << "uploadDate" << DATENOW
+        << "md5" << res["md5"]
+            ;
+
+        if (length < 1024*1024*1024) { // 2^30
+            file << "length" << (int) length;
+        }
+        else {
+            file << "length" << (long long) length;
+        }
+
+        if (!contentType.empty())
+            file << "contentType" << contentType;
+
+        if (! metadata.isEmpty())
+            file << "metadata" << metadata;
+
+        BSONObj ret = file.obj();
+        _client.insert(_filesNS.c_str(), ret);
+
+        return ret;
+    }
+
     GridFile::GridFile(const GridFS * grid , BSONObj obj ) {
         _grid = grid;
         _obj = obj;
